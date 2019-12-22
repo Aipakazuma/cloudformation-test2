@@ -7,7 +7,7 @@ Parameters:
 
 Resources:
   # まずはLambdaを定義
-  AutomaticClassificationIllegalAvGetCrawlUrlList2:
+  AutomaticClassificationIllegalAvGetCrawlUrlList:
     Type: AWS::Lambda::Function
     Properties:
       Code:
@@ -28,6 +28,17 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.8
       Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
+  
+  AutomaticClassificationIllegalAvScraping:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: automatic.classification.illegal.av
+        S3Key: code_build/automatic_classification_illegal_av__html_download.zip
+      FunctionName: automatic_classification_illegal_av__scraping_2
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
 
   # 次にEventsのルールを定義
   Rule:
@@ -38,14 +49,14 @@ Resources:
       ScheduleExpression: 'cron(0 1 * * ? *)'
       State: ENABLED
       Targets:
-        - Arn: !GetAtt AutomaticClassificationIllegalAvGetCrawlUrlList2.Arn
+        - Arn: !GetAtt AutomaticClassificationIllegalAvGetCrawlUrlList.Arn
           Id: lambda
 
-  AutomaticClassificationIllegalAvHtmlDownload2Permission:
+  AutomaticClassificationIllegalAvScrapingPermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !GetAtt AutomaticClassificationIllegalAvHtmlDownload2.Arn
+      FunctionName: !GetAtt AutomaticClassificationIllegalAvScraping.Arn
       Principal: s3.amazonaws.com
       SourceArn: !Join 
                   - ""
@@ -54,7 +65,8 @@ Resources:
 
   S3Bucket:
     Type: AWS::S3::Bucket
-    DependsOn: AutomaticClassificationIllegalAvHtmlDownload2Permission
+    DependsOn:
+      - AutomaticClassificationIllegalAvScrapingPermission
     Properties: 
       BucketName: automatic.classification.illegal.av2
       NotificationConfiguration: 
@@ -67,7 +79,7 @@ Resources:
                     Value: html_downloads/
                   - Name: suffix
                     Value: .html
-            Function: !GetAtt AutomaticClassificationIllegalAvHtmlDownload2.Arn
+            Function: !GetAtt AutomaticClassificationIllegalAvScraping.Arn
       PublicAccessBlockConfiguration:
         BlockPublicPolicy: true
 
@@ -76,7 +88,18 @@ Resources:
     Type: 'AWS::Lambda::Permission'
     Properties:
       Action: 'lambda:InvokeFunction'
-      FunctionName: !Ref AutomaticClassificationIllegalAvGetCrawlUrlList2
+      FunctionName: !Ref AutomaticClassificationIllegalAvGetCrawlUrlList
       Principal: 'events.amazonaws.com'
       SourceAccount: !Ref AWS::AccountId
       SourceArn: !GetAtt Rule.Arn
+  
+  EventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref AutomaticClassificationIllegalAvGetCrawlUrlList
+      Qualifier: "$LATEST"
+      MaximumEventAgeInSeconds: 600
+      MaximumRetryAttempts: 0
+      DestinationConfig:
+        OnSuccess:
+          Destination: !GetAtt AutomaticClassificationIllegalAvHtmlDownload2.Arn
