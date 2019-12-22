@@ -1,9 +1,82 @@
-AWSTemplateFormatVersion: 2010-09-09
-Description: >
-  Sample template 
-Resources: 
-  s3Bucket:
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: SampleLambdaRole
+
+Resources:
+  # まずはLambdaを定義
+  AutomaticClassificationIllegalAvGetCrawlUrlList2:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: automatic.classification.illegal.av
+        S3Key: code_build/automatic_classification_illegal_av__get_crawl_url_list.zip
+      FunctionName: automatic_classification_illegal_av__get_crawl_url_list_2
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
+
+  AutomaticClassificationIllegalAvHtmlDownload2:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: automatic.classification.illegal.av
+        S3Key: code_build/automatic_classification_illegal_av__html_download.zip
+      FunctionName: automatic_classification_illegal_av__html_download_2
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
+
+  # 次にEventsのルールを定義
+  Rule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: sample-rule
+      Name: everyday
+      ScheduleExpression: 'cron(0 1 * * ? *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AutomaticClassificationIllegalAvGetCrawlUrlList2.Arn
+          Id: lambda
+
+  AutomaticClassificationIllegalAvHtmlDownload2Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt AutomaticClassificationIllegalAvHtmlDownload2.Arn
+      Principal: s3.amazonaws.com
+      SourceArn: !Join 
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - automatic.classification.illegal.av2
+
+  S3Bucket:
     Type: AWS::S3::Bucket
+    DependsOn: AutomaticClassificationIllegalAvHtmlDownload2Permission
     Properties: 
-      AccessControl:  BucketOwnerFullControl
-      BucketName: be.movies2
+      BucketName: automatic.classification.illegal.av2
+      NotificationConfiguration: 
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: html_downloads/
+                  - Name: suffix
+                    Value: .html
+            Function: !GetAtt AutomaticClassificationIllegalAvHtmlDownload2.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: true
+
+  # 最後にCloudWatchEventsからLambdaの実行を許可する
+  LambdaEvent:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref AutomaticClassificationIllegalAvGetCrawlUrlList2
+      Principal: 'events.amazonaws.com'
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !GetAtt Rule.Arn
