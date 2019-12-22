@@ -40,6 +40,17 @@ Resources:
       Runtime: python3.8
       Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
 
+  AutomaticClassificationIllegalAvDynamoInsert:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: automatic.classification.illegal.av
+        S3Key: code_build/automatic_classification_illegal_av__html_download.zip
+      FunctionName: automatic_classification_illegal_av__dynamo_insert_2
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
+
   # 次にEventsのルールを定義
   Rule:
     Type: 'AWS::Events::Rule'
@@ -63,15 +74,27 @@ Resources:
                   - - "arn:aws:s3:::"
                     - automatic.classification.illegal.av2
 
+  AutomaticClassificationIllegalAvDynamoInsertPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt AutomaticClassificationIllegalAvDynamoInsert.Arn
+      Principal: s3.amazonaws.com
+      SourceArn: !Join 
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - automatic.classification.illegal.av2
+
   S3Bucket:
     Type: AWS::S3::Bucket
     DependsOn:
       - AutomaticClassificationIllegalAvScrapingPermission
+      - AutomaticClassificationIllegalAvDynamoInsertPermission
     Properties: 
       BucketName: automatic.classification.illegal.av2
       NotificationConfiguration: 
         LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
+          - Event: s3:ObjectCreated:Put
             Filter:
               S3Key:
                 Rules:
@@ -80,6 +103,15 @@ Resources:
                   - Name: suffix
                     Value: .html
             Function: !GetAtt AutomaticClassificationIllegalAvScraping.Arn
+          - Event: s3:ObjectCreated:Put
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: scrap_data/
+                  - Name: suffix
+                    Value: .json
+            Function: !GetAtt AutomaticClassificationIllegalAvDynamoInsert.Arn
       PublicAccessBlockConfiguration:
         BlockPublicPolicy: true
 
